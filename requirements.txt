@@ -1,0 +1,7 @@
+streamlit
+sentence-transformers
+pinecone
+google-genai
+pydantic
+pandas
+dotenv
