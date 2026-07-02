@@ -29,11 +29,12 @@ def load_models():
 bi_encoder, reranker = load_models()
 
 # --- 3. CONNECT TO APIS ---
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+# Safe fallback mapping for Local (.env) vs Cloud (Streamlit Secrets)
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY") or st.secrets.get("PINECONE_API_KEY")
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index("cinematch-movies")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # --- 4. GET USER INPUT ---
@@ -52,16 +53,14 @@ if user_query:
     2. target_genre: Identify the dominant high-level genre classification. It MUST match one of the standard TMDB genres capitalized exactly like this: 'Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Music', 'Mystery', 'Romance', 'Science Fiction', 'Thriller', 'TV Movie', 'War', 'Western'.
     """
 
-    try:routing_response = ai_client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=router_prompt,
-        config={'response_mime_type': 'application/json', 'response_schema': QueryBlueprint}
-    )
-
+    try:
+        routing_response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=router_prompt,
+            config={'response_mime_type': 'application/json', 'response_schema': QueryBlueprint}
+        )
     except Exception as e:
          st.warning("⚠️ High traffic on the AI live synthesis engine. Here are your raw database matches:")
-
-
 
     structured_data = json.loads(routing_response.text)
     clean_query = structured_data["clean_semantic_query"]
@@ -81,7 +80,7 @@ if user_query:
 
     # Fallback if genre filter yields 0 matches
     if not raw_results['matches']:
-        st.warning(f"No movies found matching '{filter_genre}' in your 40% database. Initializing fallback scan...")
+        st.warning(f"No movies found matching '{filter_genre}' in your database. Initializing fallback scan...")
         raw_results = index.query(vector=query_vector, top_k=100, include_metadata=True)
 
     if not raw_results['matches']:
@@ -96,7 +95,9 @@ if user_query:
         metadata = match.get('metadata', {})
         movie_info = {
             "title": metadata.get('title', 'Unknown Title'),
-            "overview": metadata.get('overview', 'No overview available.')
+            "overview": metadata.get('overview', 'No overview available.'),
+            # Pull poster path from Pinecone metadata space
+            "poster_path": metadata.get('poster_path', '')
         }
         candidates.append(movie_info)
         pairs.append([user_query, movie_info['overview']])
@@ -124,20 +125,65 @@ if user_query:
     Task: Write a highly custom recommendation list for these 3 movies. For each movie, tell the user directly why it outranked the other candidates to fit their exact vibe. Keep it punchy, engaging, and professional.
     """
 
-    try:response = ai_client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=rag_prompt,
-    )
+    try:
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=rag_prompt,
+        )
     except Exception as e:
         st.warning("⚠️ High traffic on the AI live synthesis engine. Here are your raw database matches:")
 
-
     # --- RENDER RESULTS CLEARLY ---
-    titles_string=" | ".join(m.get('title', 'Unknown Title') for m in top_3_winners)
+    titles_string = " | ".join(m.get('title', 'Unknown Title') for m in top_3_winners)
 
     st.success(f"🏆 **Top 3 Match Selections:** {titles_string}")
 
     st.subheader("✨ CineMatch Precision Response:")
     st.markdown(response.text)
     
+    st.write("---")
     
+    # --- 📸 NEW IMAGE DISPLAY ENGINE ---
+   # --- 📸 HIGH-FIDELITY OMDb IMAGE DISPLAY ENGINE ---
+# --- 📸 HIGH-FIDELITY DIRECT OMDb IMAGE ENGINE ---
+    st.subheader("🖼️ Featured Recommendations Gallery")
+    
+    # Initialize 3 responsive horizontal containers
+    cols = st.columns(3)
+    
+    # 🎯 Clean, isolated OMDb API Fetcher
+    def get_omdb_poster(movie_name):
+        encoded_title = movie_name.replace(" ", "+")
+        url = f"http://www.omdbapi.com/?t={encoded_title}&apikey=dff3a6a4"
+        
+        try:
+            import requests
+            res = requests.get(url, timeout=4)
+            res.raise_for_status()
+            data = res.json()
+            
+            # Extract via OMDb's exact capitalized JSON key
+            poster_url = data.get('Poster')
+            if poster_url and poster_url != "N/A":
+                return poster_url
+        except:
+            pass
+        return None
+
+    # Run the display mapping directly via live API lookup
+    for i, movie in enumerate(top_3_winners):
+        title = movie.get('title', 'Unknown Title')
+        
+        # 1. Establish the clean charcoal matte fallback first
+        encoded_title = title.replace(" ", "+")
+        working_image_url = f"https://placehold.co/500x750/0e1117/ffffff?text={encoded_title}"
+        
+        # 2. Immediately call the OMDb live lookup
+        omdb_poster = get_omdb_poster(title)
+        if omdb_poster:
+            working_image_url = omdb_poster
+
+        # 3. Render directly onto the interface layout
+        with cols[i]:
+            st.image(working_image_url, use_container_width=True)
+            st.markdown(f"**🎬 {title}**")
