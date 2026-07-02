@@ -160,11 +160,15 @@ if user_query:
             
            
             poster_url = data.get('Poster')
-            if poster_url and poster_url != "N/A":
-                return poster_url
+            rating_url = data.get('imdbRating','N/A')
+            if poster_url == "N/A" :
+                
+                poster_url = None
+
+            return posted_url,imdb_rating
         except:
             pass
-        return None
+        return None, "N/A"
 
 
     for i, movie in enumerate(top_3_winners):
@@ -181,4 +185,4 @@ if user_query:
        
         with cols[i]:
             st.image(working_image_url, use_container_width=True)
-            st.markdown(f"**🎬 {title}**")
+            st.markdown(f"**🎬 {title}** \n⭐ IMDb: `{movie_rating}/10`")
