@@ -9,12 +9,12 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-# Class structure required for Gemini's structured output
+
 class QueryBlueprint(BaseModel):
     clean_semantic_query: str
     target_genre: str
 
-# --- 1. MINIMAL STREAMLIT LAYOUT ---
+
 st.title("🎬 CineMatch AI Engine")
 st.write("Two-Stage Retrieval + RAG Recommendation System")
 st.write("---")
@@ -28,8 +28,6 @@ def load_models():
 
 bi_encoder, reranker = load_models()
 
-# --- 3. CONNECT TO APIS ---
-# Safe fallback mapping for Local (.env) vs Cloud (Streamlit Secrets)
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY") or st.secrets.get("PINECONE_API_KEY")
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index("cinematch-movies")
@@ -37,10 +35,9 @@ index = pc.Index("cinematch-movies")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# --- 4. GET USER INPUT ---
+
 user_query = st.text_input("🎬 How are you feeling / What kind of movie do you want?")
 
-# --- 5. EXECUTE THE EXACT PIPELINE FROM SEARCH.PY ---
 if user_query:
     st.write("⏳ Processing your request through the pipeline...")
     
@@ -143,15 +140,14 @@ if user_query:
     
     st.write("---")
     
-    # --- 📸 NEW IMAGE DISPLAY ENGINE ---
-   # --- 📸 HIGH-FIDELITY OMDb IMAGE DISPLAY ENGINE ---
+   
 # --- 📸 HIGH-FIDELITY DIRECT OMDb IMAGE ENGINE ---
     st.subheader("🖼️ Featured Recommendations Gallery")
     
     # Initialize 3 responsive horizontal containers
     cols = st.columns(3)
     
-    # 🎯 Clean, isolated OMDb API Fetcher
+    
     def get_omdb_poster(movie_name):
         encoded_title = movie_name.replace(" ", "+")
         url = f"http://www.omdbapi.com/?t={encoded_title}&apikey=dff3a6a4"
@@ -162,7 +158,7 @@ if user_query:
             res.raise_for_status()
             data = res.json()
             
-            # Extract via OMDb's exact capitalized JSON key
+           
             poster_url = data.get('Poster')
             if poster_url and poster_url != "N/A":
                 return poster_url
@@ -170,20 +166,19 @@ if user_query:
             pass
         return None
 
-    # Run the display mapping directly via live API lookup
+
     for i, movie in enumerate(top_3_winners):
         title = movie.get('title', 'Unknown Title')
-        
-        # 1. Establish the clean charcoal matte fallback first
+      
         encoded_title = title.replace(" ", "+")
         working_image_url = f"https://placehold.co/500x750/0e1117/ffffff?text={encoded_title}"
         
-        # 2. Immediately call the OMDb live lookup
+        
         omdb_poster = get_omdb_poster(title)
         if omdb_poster:
             working_image_url = omdb_poster
 
-        # 3. Render directly onto the interface layout
+       
         with cols[i]:
             st.image(working_image_url, use_container_width=True)
             st.markdown(f"**🎬 {title}**")

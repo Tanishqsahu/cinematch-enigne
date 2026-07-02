@@ -9,11 +9,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class QueryBlueprint(BaseModel):
-    clean_semantic_query: str  # Kept lower case for clean parsing
+    clean_semantic_query: str  
     target_genre: str
 
 if __name__ == '__main__':
-    # 1. Initialize our AI brains - MUST MATCH INGESTION MODEL
+   
     print("Loading Pinecone Bi-Encoder (Paraphrase-L3)...")
     bi_encoder = SentenceTransformer('paraphrase-MiniLM-L3-v2')
 
@@ -29,7 +29,7 @@ if __name__ == '__main__':
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # 4. Get user's emotional vibe
+    
     user_query = input("\n🎬 How are you feeling / What kind of movie do you want? ")
 
     router_prompt = f"""
@@ -57,11 +57,11 @@ if __name__ == '__main__':
 
     print(f"📊 Gemini Routing Strategy -> Detected Genre: '{filter_genre}' | Dense Query: '{clean_query}'")
 
-    # 5. Convert to vector using the CORRECT matching model
+    
     print("\n📡 Fetching top 100 raw candidates from Pinecone...")
     query_vector = bi_encoder.encode(clean_query).tolist() # Embedded the clean text query here!
 
-    # FIXED FILTER: Checks if the target genre string exists inside the metadata array
+ 
     raw_results = index.query(
         vector=query_vector, 
         top_k=100,
@@ -91,19 +91,19 @@ if __name__ == '__main__':
             "overview": metadata.get('overview', 'No overview available.')
         }
         candidates.append(movie_info)
-        # Compare the raw user emotion query with the plot summary text
+        
         pairs.append([user_query, movie_info['overview']])
 
-    # Compute deep alignment scores
+    
     rerank_scores = reranker.predict(pairs)
 
     for idx, score in enumerate(rerank_scores):
         candidates[idx]['rerank_score'] = float(score)
 
-    # Sort candidates descending by their attention alignment scores
+   
     reranked_list = sorted(candidates, key=lambda x: x['rerank_score'], reverse=True)
 
-    # ---- STAGE 3: HANDING THE WINNER TO GEMINI ----
+   
     best_movie = reranked_list[0]
     print(f"\n[🏆 Reranker chose: {best_movie['title']} as the absolute #1 match]")
 
