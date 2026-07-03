@@ -150,7 +150,8 @@ if user_query:
     
     def get_omdb_poster(movie_name):
         encoded_title = movie_name.replace(" ", "+")
-        url = f"http://www.omdbapi.com/?t={encoded_title}&apikey=dff3a6a4"
+        OMDB_API_KEY=os.getenv("OMDB_API_KEY")
+        url = f"http://www.omdbapi.com/?t={encoded_title}&apikey={OMDB_API_KEY}"
         
         try:
             import requests
@@ -178,11 +179,14 @@ if user_query:
         working_image_url = f"https://placehold.co/500x750/0e1117/ffffff?text={encoded_title}"
         
         
-        omdb_poster = get_omdb_poster(title)
-        if omdb_poster:
+        omdb_poster, movie_rating = get_omdb_poster(title)
+        
+        # 3. 🎯 ONLY overwrite if the API actually returned a valid, non-empty URL string
+        if omdb_poster and isinstance(omdb_poster, str):
             working_image_url = omdb_poster
 
-       
+        # 4. Render directly onto the interface layout
         with cols[i]:
+            # This will now NEVER receive a NoneType object!
             st.image(working_image_url, use_container_width=True)
             st.markdown(f"**🎬 {title}** \n⭐ IMDb: `{movie_rating}/10`")
