@@ -19,7 +19,7 @@ st.title("🎬 CineMatch AI Engine")
 st.write("Two-Stage Retrieval + RAG Recommendation System")
 st.write("---")
 
-# --- 2. INITIALIZE AI MODELS (Cached so they only load once) ---
+
 @st.cache_resource
 def load_models():
     bi_encoder = SentenceTransformer('paraphrase-MiniLM-L3-v2')
@@ -28,11 +28,21 @@ def load_models():
 
 bi_encoder, reranker = load_models()
 
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY") or st.secrets.get("PINECONE_API_KEY")
+IS_CLOUD = os.getenv("STREAMLIT_SERVER_PORT") or os.getenv("HOSTNAME")
+
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+if not PINECONE_API_KEY and IS_CLOUD:
+    try: PINECONE_API_KEY = st.secrets.get("PINECONE_API_KEY")
+    except: pass
+
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index("cinematch-movies")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY and IS_CLOUD:
+    try: GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
+    except: pass
+
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
@@ -41,7 +51,7 @@ user_query = st.text_input("🎬 How are you feeling / What kind of movie do you
 if user_query:
     st.write("⏳ Processing your request through the pipeline...")
     
-    # --- STAGE 1: METADATA ROUTING ---
+  
     router_prompt = f"""
     Analyze this user movie query: "{user_query}"
 
@@ -65,7 +75,7 @@ if user_query:
 
     st.info(f"📊 **Gemini Router Matrix:** Detected Genre: `{filter_genre}` | Cleaned Query: *'{clean_query}'*")
 
-    # --- VECTOR RETRIEVAL ---
+   
     query_vector = bi_encoder.encode(clean_query).tolist()
 
     raw_results = index.query(
@@ -75,7 +85,7 @@ if user_query:
         include_metadata=True
     )
 
-    # Fallback if genre filter yields 0 matches
+    
     if not raw_results['matches']:
         st.warning(f"No movies found matching '{filter_genre}' in your database. Initializing fallback scan...")
         raw_results = index.query(vector=query_vector, top_k=100, include_metadata=True)
@@ -84,7 +94,7 @@ if user_query:
         st.error("Your index appears completely empty.")
         st.stop()
 
-    # --- STAGE 2: LOCAL CONTEXTUAL RERANKING ---
+   
     pairs = []
     candidates = []
 
@@ -93,7 +103,6 @@ if user_query:
         movie_info = {
             "title": metadata.get('title', 'Unknown Title'),
             "overview": metadata.get('overview', 'No overview available.'),
-            # Pull poster path from Pinecone metadata space
             "poster_path": metadata.get('poster_path', '')
         }
         candidates.append(movie_info)
@@ -107,7 +116,7 @@ if user_query:
     reranked_list = sorted(candidates, key=lambda x: x['rerank_score'], reverse=True)
     top_3_winners = reranked_list[:3]
 
-    # --- STAGE 3: GENERATING THE RAG REASONING ---
+   
     movies_text = ""
     for i, movie in enumerate(top_3_winners):
         movies_text += f"\n🔥 Option #{i+1}:\nTitle: {movie['title']}\nPlot: {movie['overview']}\n"
@@ -130,7 +139,7 @@ if user_query:
     except Exception as e:
         st.warning("⚠️ High traffic on the AI live synthesis engine. Here are your raw database matches:")
 
-    # --- RENDER RESULTS CLEARLY ---
+    
     titles_string = " | ".join(m.get('title', 'Unknown Title') for m in top_3_winners)
 
     st.success(f"🏆 **Top 3 Match Selections:** {titles_string}")
@@ -140,17 +149,29 @@ if user_query:
     
     st.write("---")
     
-   
-# --- 📸 HIGH-FIDELITY DIRECT OMDb IMAGE ENGINE ---
+    
     st.subheader("🖼️ Featured Recommendations Gallery")
     
-    # Initialize 3 responsive horizontal containers
     cols = st.columns(3)
     
-    
-    def get_omdb_poster(movie_name):
+    def get_omdb_data(movie_name):
         encoded_title = movie_name.replace(" ", "+")
-        OMDB_API_KEY=os.getenv("OMDB_API_KEY")
+        
+       
+        OMDB_API_KEY = os.getenv("OMDB_API_KEY")
+        
+        
+        if not OMDB_API_KEY and (os.getenv("STREAMLIT_SERVER_PORT") or os.getenv("HOSTNAME")):
+            try:
+                OMDB_API_KEY = st.secrets.get("OMDB_API_KEY")
+            except Exception:
+                OMDB_API_KEY = None
+                
+        
+        if not OMDB_API_KEY:
+            print("⚠️ Production Warning: No OMDb API Key detected in current environment scope.")
+            return None, "N/A"
+
         url = f"http://www.omdbapi.com/?t={encoded_title}&apikey={OMDB_API_KEY}"
         
         try:
@@ -159,34 +180,29 @@ if user_query:
             res.raise_for_status()
             data = res.json()
             
-           
             poster_url = data.get('Poster')
-            rating_url = data.get('imdbRating','N/A')
-            if poster_url == "N/A" :
-                
+            imdb_rating = data.get('imdbRating', 'N/A')
+            
+            if poster_url == "N/A":
                 poster_url = None
-
-            return posted_url,imdb_rating
-        except:
+                
+            return poster_url, imdb_rating
+        except Exception:
             pass
         return None, "N/A"
 
-
     for i, movie in enumerate(top_3_winners):
         title = movie.get('title', 'Unknown Title')
-      
+        
+        # Initialize default slate assets state bounds
         encoded_title = title.replace(" ", "+")
         working_image_url = f"https://placehold.co/500x750/0e1117/ffffff?text={encoded_title}"
         
+        omdb_poster, movie_rating = get_omdb_data(title)
         
-        omdb_poster, movie_rating = get_omdb_poster(title)
-        
-        # 3. 🎯 ONLY overwrite if the API actually returned a valid, non-empty URL string
         if omdb_poster and isinstance(omdb_poster, str):
             working_image_url = omdb_poster
 
-        # 4. Render directly onto the interface layout
         with cols[i]:
-            # This will now NEVER receive a NoneType object!
             st.image(working_image_url, use_container_width=True)
             st.markdown(f"**🎬 {title}** \n⭐ IMDb: `{movie_rating}/10`")
